@@ -101,50 +101,6 @@ namespace msg
 
 
 
-	namespace _detale
-	{
-		template <typename R>
-		struct __to_t
-		{
-			__to_t() = default;
-			__to_t(__to_t const&) = delete;
-			__to_t(__to_t&&) = delete;
-			__to_t& operator=(__to_t const&) = delete;
-			__to_t& operator=(__to_t&&) = delete;
-
-			// Привести значение std::variant к типу
-			template <template <typename...> typename V, typename... T
-				, is_variant_b<V<T...>> = true
-				, has_in_pack_b<R, T...> = true
-			>
-			constexpr
-			auto operator()(V<T...> const& v) const noexcept
-			-> std::optional<std::reference_wrapper<const R>>
-			{
-				if (auto tv = std::get_if<R>(&v); tv)
-					return std::make_optional(std::ref(*tv));
-				else
-					return std::nullopt;
-			}			
-		};
-	}
-	template <typename R>
-	constexpr
-	_detale::__to_t<R> to;
-
-	// Привести значение std::variant к типу
-	template <template<typename> typename V, typename T, typename... Ts
-		, is_variant_b<V<Ts...>> = true
-		, has_in_pack_b<T, Ts...> = true
-	>
-	constexpr
-	auto operator | (V<Ts...> const& v, _detale::__to_t<T> const& f) noexcept
-	-> std::optional<std::reference_wrapper<const T>>
-	{
-		return f(v);
-	}
-
-
 
 	namespace _detale
 	{

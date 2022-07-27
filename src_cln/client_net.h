@@ -37,7 +37,7 @@ public:
 
 	handlers_inline msg_handlers
 	{
-		  &ClientSend::send_01 | hook<net::msg_udp>
+		hook<net::msg_udp>(&ClientSend::send_01)
 	};
 
 private:
@@ -95,9 +95,9 @@ public:
 
 	handlers_inline msg_handlers
 	{
-		  &ClientWork::work | hook<net::msg_udp>
-		, &ClientWork::timeout | hook<timeout_t>
-		, &ClientWork::start_send | hook<start_send_t>
+		  hook<net::msg_udp>(&ClientWork::work)
+		, hook<timeout_t>(&ClientWork::timeout)
+		, hook<start_send_t>(&ClientWork::start_send)
 	};
 
 private:
@@ -141,10 +141,12 @@ public:
 	inline
 	~ClientNet()
 	{
-		send_thr | stop | join;
+		stop(send_thr);
+		join(send_thr);
 		for (auto& el : works)
 		{
-			*el.second | stop | join;
+			stop(*el.second);
+			join(*el.second);
 		}
 	}
 
@@ -156,13 +158,13 @@ public:
 
 	handlers_inline msg_handlers
 	{
-		    &ClientNet::rcv_seq | hook<net::msg_udp>
+		hook<net::msg_udp>(&ClientNet::rcv_seq)
 	};
 
 	handlers_inline error_handlers
 	{
-		  &ClientNet::error_hadler | hook<msg_error_t>
-		, &ClientNet::timeout | hook<msg_timeout_t>
+		  hook<msg_error_t>(&ClientNet::error_hadler)
+		, hook<msg_timeout_t>(&ClientNet::timeout)
 	};
 
 private:

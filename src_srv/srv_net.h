@@ -37,7 +37,7 @@ public:
 
 	handlers_inline msg_handlers
 	{
-		  &SrvSend::send_01 | hook<net::msg_udp>
+		hook<net::msg_udp>(&SrvSend::send_01)
 	};
 
 private:
@@ -76,7 +76,7 @@ public:
 
 	handlers_inline msg_handlers
 	{
-		  &SrvWork::work | hook<net::msg_udp>
+		hook<net::msg_udp>(&SrvWork::work)
 	};
 
 private:
@@ -117,10 +117,12 @@ public:
 	inline
 	~SrvNet()
 	{
-		send_thr | stop | join;
+		stop(send_thr);
+		join(send_thr);
 		for (auto& el : works)
 		{
-			*el.second | stop | join;
+			stop(*el.second);
+			join(*el.second);
 		}
 	}
 
@@ -130,12 +132,12 @@ public:
 
 	handlers_inline msg_handlers
 	{
-		  &SrvNet::rcv_seq | hook<net::msg_udp>
+		hook<net::msg_udp>(&SrvNet::rcv_seq)
 	};
 
 	handlers_inline error_handlers
 	{
-		  &SrvNet::error_hadler | hook<msg_error_t>
+		hook<msg_error_t>(&SrvNet::error_hadler)
 	};
 
 private:

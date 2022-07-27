@@ -11,17 +11,14 @@
 #include "client_net.h"
 
 
-void ClientSend::send_01(net::msg_udp_ts& d)
+void ClientSend::send_01(net::msg_udp_ts& in_d)
 {
 	std::ostringstream os;
-	d | to<net::msg_udp> | into >> [this, &os](auto&& d)
+	auto& d = std::get<net::msg_udp>(in_d);
+	if (!options.line_interface.send(udp_test::serializer(d)))
 	{
-		options.line_interface << udp_test::serializer(d)
-		| if_error >> [&os]()
-		{
-			display << disp_msg("Ошибка передачи ClientSend::send_01!");
-		};
-	};
+		display.send("Ошибка передачи ClientSend::send_01!");
+	}
 }
 
 void ClientWork::send_pack(std::uint32_t sn, byte_array_t& d)
@@ -41,7 +38,7 @@ void ClientWork::send_pack(std::uint32_t sn, byte_array_t& d)
 	msg.head.id = options.id;
 	msg.head.seq_number = sn;
 	std::copy(d.begin(), d.end(), std::back_insert_iterator(msg.data));
-	options.send_interface << std::move(msg);
+	options.send_interface.send(std::move(msg));
 }
 
 auto ClientWork::get_rend_pos()
@@ -73,7 +70,7 @@ void ClientWork::send_empl()
 	}
 }
 
-void ClientWork::work(msg_client_ts& d)
+void ClientWork::work(msg_client_ts& in_d)
 {
 	std::ostringstream os;
 
@@ -85,54 +82,50 @@ void ClientWork::work(msg_client_ts& d)
 		std::size_t d_sz;
 	};
 
-	d | to<net::msg_udp> | into >> [this, &os](auto&& d)
+	auto& d = std::get<net::msg_udp>(in_d);
+	if (auto pos = sended_seqs.find(d.head.seq_number); pos != sended_seqs.end())
+	// <<<<---- удалить пакет из send_seqs
 	{
-		if (auto pos = sended_seqs.find(d.head.seq_number); pos != sended_seqs.end())
-		// <<<<---- удалить пакет из send_seqs
+		sended_seqs.erase(pos);
+	}
+	// <<<<---- проверить на прием всех пакетов ----
+	if (d.head.seq_total < seq_total)
+	// <<<<---- передаем пакет ----
+	{
+		send_empl();
+	}
+	else if (d.head.seq_total == seq_total)
+	// <<<<---- проверить контрольную сумму и уйти ----
+	{
+		uint32_t in_crc;
+		memcpy(&in_crc, d.data.data(), sizeof(in_crc));
+		in_crc = byte_swap<endianness::network, endianness::host>(in_crc);
+		os << "\n Client:" << " seq_total = " << seq_total << "\n"
+		<< "id = " << options.id << "\n";
+		os << std::hex
+		<< "crc = " << crc << "; in_crc = " << in_crc
+		<< std::dec;
+		if (crc == in_crc)
 		{
-			sended_seqs.erase(pos);
-		}
-		// <<<<---- проверить на прием всех пакетов ----
-		if (d.head.seq_total < seq_total)
-		// <<<<---- передаем пакет ----
-		{
-			send_empl();
-		}
-		else if (d.head.seq_total == seq_total)
-		// <<<<---- проверить контрольную сумму и уйти ----
-		{
-			uint32_t in_crc;
-			memcpy(&in_crc, d.data.data(), sizeof(in_crc));
-			in_crc = byte_swap<endianness::network, endianness::host>(in_crc);
-			os << "\n Client:" << " seq_total = " << seq_total << "\n"
-			<< "id = " << options.id << "\n";
-			os << std::hex
-			<< "crc = " << crc << "; in_crc = " << in_crc
-			<< std::dec;
-			if (crc == in_crc)
-			{
-				os << " - OK";
-			}
-			else
-			{
-				os << " - Error!";
-			}
-			os << "\n";
-			os << endl;
-
-			display << disp_msg(std::move(os.str()));
-
-			options.self_interface
-			| set_status_flag(2)
-			| stop;
+			os << " - OK";
 		}
 		else
-		// <<<<---- сбой ----
 		{
-			std::cout << "-------- ClientWork::work error --------" << std::endl;
+			os << " - Error!";
 		}
-	};
+		os << "\n";
+		os << endl;
 
+		display.send(std::move(os.str()));
+
+		set_status_flag(options.self_interface,2);
+		stop(options.self_interface);
+	}
+	else
+	// <<<<---- сбой ----
+	{
+		std::cout << "-------- ClientWork::work error --------" << std::endl;
+	}
 }
 
 void ClientWork::start_send(msg_client_ts&)
@@ -145,7 +138,7 @@ void ClientWork::timeout(msg_client_ts&)
 	std::cout << "-------- ClientWork::timeout --------" << std::endl;
 }
 
-void ClientNet::error_hadler(client_msg_err const& d)
+void ClientNet::error_hadler(client_msg_err const& in_d)
 {
 	using std::cout, std::endl;
 
@@ -155,11 +148,9 @@ void ClientNet::error_hadler(client_msg_err const& d)
 	<< "---- client net error_handler!!! ----"
 	<< std::this_thread::get_id()
 	<< endl;
-	d | to<msg_error_t> | data | into >> [&os](auto&& d)
-	{
-		os << "Код ошибки = " << d << endl;
-	};
-	display << disp_msg(std::move(os.str()));
+	auto& d = std::get<msg_error_t>(in_d);
+	os << "Код ошибки = " << d.data << endl;
+	display.send(std::move(os.str()));
 }
 
 void ClientNet::timeout(client_msg_err const& )
@@ -197,37 +188,35 @@ void ClientNet::timeout(client_msg_err const& )
 				, ClientWork::msg_handlers
 			);
 			++next_id;
-			thri << start_send_t{};
+			thri.send(start_send_t{});
 		}
 	}
 
 }
 
-void ClientNet::rcv_seq(net::msg_udp_ts& d)
+void ClientNet::rcv_seq(net::msg_udp_ts& in_d)
 {
-	d | to<net::msg_udp> | into >> [this](auto&& d)
+	auto& d = std::get<net::msg_udp>(in_d);
+	if (auto w = works.find(d.head.id);
+		w != works.end()
+	)
 	{
-		if (auto w = works.find(d.head.id);
-			w != works.end()
+		w->second->send(std::move(d));
+	}
+	for (auto i = works.begin(); i != works.end();)
+	{
+		if (joinable(*i->second)
+			&& (status(*i->second) & 0x02) == 2
 		)
 		{
-			*w->second << std::move(d);
+			join(*i->second);
+			i = works.erase(i);
 		}
-		for (auto i = works.begin(); i != works.end();)
+		else
 		{
-			if ((*i->second | joinable)
-				&& ((*i->second | status) & 0x02) == 2
-			)
-			{
-				*i->second | join;
-				i = works.erase(i);
-			}
-			else
-			{
-				++i;
-			}
+			++i;
 		}
-	};
+	}
 }
 
 

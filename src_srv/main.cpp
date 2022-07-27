@@ -57,15 +57,16 @@ int main()
 
 	}
 
-	display << "-------- Сервер завершает работу --------";
+	display.send("-------- Сервер завершает работу --------");
 
 	usleep(2000 * 1000);
 
 
-	srv_net | stop | join;
+	stop(srv_net);
+	join(srv_net);
 
-
-	display | stop | join;
+	stop(display);
+	join(display);
 
 
 

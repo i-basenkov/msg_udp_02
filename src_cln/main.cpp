@@ -72,7 +72,7 @@ int main()
 
 		if (file_queue.queue.size() < 28)
 		{
-			file_queue << f;
+			file_queue.emplace(f);
 		}
 		else
 		{
@@ -81,15 +81,16 @@ int main()
 
 	}
 
-	display << "-------- Клиент завершает работу --------";
+	display.send("-------- Клиент завершает работу --------");
 
 	usleep(2000 * 1000);
 
 
-	client_net | stop | join;
+	stop(client_net);
+	join(client_net);
 
-
-	display | stop | join;
+	stop(display);
+	join(display);
 
 
 

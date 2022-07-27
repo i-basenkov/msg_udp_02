@@ -159,15 +159,6 @@ namespace msg
 	constexpr
 	_detale::__hook_t<MessageType> hook;
 
-	// Прикрепить обработчик к типу сообщения
-	template <typename T, typename F>
-	constexpr
-	auto const operator | (F&& _handler, _detale::__hook_t<T> const& _hook) noexcept
-	{
-		return _hook(std::forward<F>(_handler));
-	}
-
-
 
 	enum class thread_type
 	{
@@ -209,7 +200,7 @@ namespace msg
 			, std::enable_if_t<std::is_constructible_v<_MV, MT>, bool> = true
 		>
 		constexpr
-		auto& operator << (MT&& d) noexcept
+		auto& emplace (MT&& d) noexcept
 		{
 			{
 				std::lock_guard<std::mutex> lg(mtx);
@@ -220,7 +211,6 @@ namespace msg
 		std::queue<_MV> queue{};
 		std::mutex mtx;
 	};
-
 
 
 	namespace _detale
@@ -267,7 +257,7 @@ namespace msg
 			>
 			friend struct thread_worker_t;
 
-			friend struct __stop_t;
+			//friend struct __stop_t;
 			friend struct __status_t;
 			friend struct __set_status_flag_t;
 			friend struct __clear_status_flag_t;
@@ -275,11 +265,8 @@ namespace msg
 			friend struct __joinable_t;
 			friend struct __in_work_t;
 
-		protected:
 			std::atomic<std::uint32_t> status{0};
 			std::atomic<int> stop{0};
-
-		private:
 			std::thread m_thread;
 		};
 
@@ -296,14 +283,13 @@ namespace msg
 				, std::enable_if_t<std::is_constructible_v<_MessageVariants, MT>, bool> = true
 			>
 			constexpr
-			auto& operator << (MT&& d) noexcept
+			void send(MT&& d) noexcept
 			{
 				{
 					std::lock_guard<std::mutex> lg(m_mtx);
 					m_queue.push(std::forward<MT>(d));
 				}
 				m_cv.notify_one();
-				return *this;
 			}
 
 			template <
@@ -486,16 +472,14 @@ namespace msg
 
 		//Передать сообщение
 		constexpr
-		auto operator << (byte_array_t ba) noexcept
-		-> std::optional<std::reference_wrapper<thread_interface_t
-			<_MessageVariants, _ErrorVariants, udp, _Timeout>>>
+		bool send(byte_array_t ba) noexcept
 		{
 			int cnt = 0;
 			while (this->status != 1)
 			{
 				if (++cnt > 100)
 				{
-					return std::nullopt;
+					return false;
 				}
 				usleep(100 * 1000);
 			}
@@ -504,7 +488,7 @@ namespace msg
 			_addr.sin_port = byte_swap<endianness::host, endianness::network>(this->port());
 			_addr.sin_addr.s_addr = byte_swap<endianness::host, endianness::network>(this->addr());
 			sendto(this->sock(), ba.data(), ba.size(), 0, reinterpret_cast<sockaddr*>(&_addr), sizeof(_addr));
-			return std::make_optional(std::ref(*this));
+			return true;
 		}
 	};
 
@@ -977,346 +961,55 @@ namespace msg
 	}
 
 
-	namespace _detale
-	{
-		struct __stop_t
-		{
-			__stop_t() = default;
-			__stop_t(__stop_t const&) = delete;
-			__stop_t(__stop_t&&) = delete;
-			__stop_t& operator=(__stop_t const&) = delete;
-			__stop_t& operator=(__stop_t&&) = delete;
-
-			//Остановить поток
-			template <typename I, is_thread_interface_b<I> = true>
-			constexpr
-			auto& operator()(I& _i) const noexcept
-			{
-				_i.stop = 1;
-				return _i;
-			}
-		};
-	}
-	//Остановить поток
-	constexpr
-	_detale::__stop_t stop;
 
 	//Остановить поток
 	template <typename I, is_thread_interface_b<I> = true>
 	constexpr
-	auto& operator | (I& _i, _detale::__stop_t const& _f) noexcept
+	void stop(I& _i) noexcept
 	{
-		return _f(_i);
+		_i.stop = 1;
 	}
-
-
-
-	namespace _detale
-	{
-		struct __status_t
-		{
-			__status_t() = default;
-			__status_t(__status_t const&) = delete;
-			__status_t(__status_t&&) = delete;
-			__status_t& operator=(__status_t const&) = delete;
-			__status_t& operator=(__status_t&&) = delete;
-
-			//Возвратить статус потока
-			template <typename I, is_thread_interface_b<I> = true>
-			constexpr
-			auto operator()(I& _i) const noexcept
-			{
-				return static_cast<std::uint32_t>(_i.status);
-			}
-		};
-	}
-	//Возвратить статус потока
-	constexpr
-	_detale::__status_t status;
 
 	//Возвратить статус потока
 	template <typename I, is_thread_interface_b<I> = true>
 	constexpr
-	auto operator | (I& _i, _detale::__status_t const& _f) noexcept
+	auto status(I& _i) noexcept
 	{
-		return _f(_i);
+		return static_cast<std::uint32_t>(_i.status);
 	}
 
-
-	namespace _detale
-	{
-		struct __join_t
-		{
-			__join_t() = default;
-			__join_t(__join_t const&) = delete;
-			__join_t(__join_t&&) = delete;
-			__join_t& operator=(__join_t const&) = delete;
-			__join_t& operator=(__join_t&&) = delete;
-
-			//Возвратить статус потока
-			template <typename I, is_thread_interface_b<I> = true>
-			constexpr
-			auto& operator()(I& _i) const noexcept
-			{
-				if (_i.m_thread.joinable())
-				{
-					_i.m_thread.join();
-				}
-				return _i;
-			}
-		};
-	}
-	//Возвратить статус потока
-	constexpr
-	_detale::__join_t join;
-
-	//Возвратить статус потока
 	template <typename I, is_thread_interface_b<I> = true>
 	constexpr
-	auto& operator | (I& _i, _detale::__join_t const& _f) noexcept
+	void join(I& _i) noexcept
 	{
-		return _f(_i);
-	}
-
-
-
-	namespace _detale
-	{
-		struct __joinable_t
+		if (_i.m_thread.joinable())
 		{
-			__joinable_t() = default;
-			__joinable_t(__joinable_t const&) = delete;
-			__joinable_t(__joinable_t&&) = delete;
-			__joinable_t& operator=(__joinable_t const&) = delete;
-			__joinable_t& operator=(__joinable_t&&) = delete;
-
-			//Поток потенциально работающий?
-			template <typename I, is_thread_interface_b<I> = true>
-			constexpr
-			bool operator()(I& _i) const noexcept
-			{
-				return _i.m_thread.joinable();
-			}
-		};
+			_i.m_thread.join();
+		}
 	}
-	//Поток потенциально работающий?
-	constexpr
-	_detale::__joinable_t joinable;
 
 	//Поток потенциально работающий?
 	template <typename I, is_thread_interface_b<I> = true>
 	constexpr
-	bool operator | (I& _i, _detale::__joinable_t const& _f) noexcept
+	bool joinable(I& _i) noexcept
 	{
-		return _f(_i);
-	}
-
-
-
-	namespace _detale
-	{
-		struct __set_status_flag_t
-		{
-			__set_status_flag_t() = delete;
-			__set_status_flag_t(__set_status_flag_t const&) = delete;
-			__set_status_flag_t(__set_status_flag_t&&) = delete;
-			__set_status_flag_t& operator=(__set_status_flag_t const&) = delete;
-			__set_status_flag_t& operator=(__set_status_flag_t&&) = delete;
-
-			constexpr
-			__set_status_flag_t(std::uint32_t st)
-				: m_status{st}
-			{
-			}
-
-			//Установить статус потока
-			template <typename I, is_thread_interface_b<I> = true>
-			constexpr
-			auto& operator()(I& _i) const noexcept
-			{
-				_i.status |= m_status;
-				return _i;
-			}
-			std::uint32_t m_status;
-		};
-		struct __create_set_status_flag_t
-		{
-			__create_set_status_flag_t() = default;
-			__create_set_status_flag_t(__create_set_status_flag_t const&) = delete;
-			__create_set_status_flag_t(__create_set_status_flag_t&&) = delete;
-			__create_set_status_flag_t& operator=(__create_set_status_flag_t const&) = delete;
-			__create_set_status_flag_t& operator=(__create_set_status_flag_t&&) = delete;
-
-			constexpr
-			auto operator()(std::uint32_t st) const noexcept
-			{
-				return __set_status_flag_t(st);
-			}
-		};
-
-		struct __clear_status_flag_t
-		{
-			__clear_status_flag_t() = delete;
-			__clear_status_flag_t(__clear_status_flag_t const&) = delete;
-			__clear_status_flag_t(__clear_status_flag_t&&) = delete;
-			__clear_status_flag_t& operator=(__clear_status_flag_t const&) = delete;
-			__clear_status_flag_t& operator=(__clear_status_flag_t&&) = delete;
-
-			constexpr
-			__clear_status_flag_t(std::uint32_t st)
-				: m_status{st}
-			{
-			}
-
-			//Установить статус потока
-			template <typename I, is_thread_interface_b<I> = true>
-			constexpr
-			auto& operator()(I& _i) const noexcept
-			{
-				_i.status &= ~m_status;
-				return _i;
-			}
-			std::uint32_t m_status;
-		};
-		struct __create_clear_status_flag_t
-		{
-			__create_clear_status_flag_t() = default;
-			__create_clear_status_flag_t(__create_clear_status_flag_t const&) = delete;
-			__create_clear_status_flag_t(__create_clear_status_flag_t&&) = delete;
-			__create_clear_status_flag_t& operator=(__create_clear_status_flag_t const&) = delete;
-			__create_clear_status_flag_t& operator=(__create_clear_status_flag_t&&) = delete;
-
-			constexpr
-			auto operator()(std::uint32_t st) const noexcept
-			{
-				return __clear_status_flag_t(st);
-			}
-		};
-
-	}
-
-	//Установить флаг статуса потока
-	constexpr
-	_detale::__create_set_status_flag_t set_status_flag;
-
-	//Установить флаг статуса потока
-	constexpr
-	_detale::__create_clear_status_flag_t clear_status_flag;
-
-	//Установить статус потока
-	template <typename I, is_thread_interface_b<I> = true>
-	constexpr
-	auto& operator | (I& _i, _detale::__set_status_flag_t const& _f) noexcept
-	{
-		return _f(_i);
+		return _i.m_thread.joinable();
 	}
 
 	//Установить статус потока
 	template <typename I, is_thread_interface_b<I> = true>
 	constexpr
-	auto& operator | (I& _i, _detale::__clear_status_flag_t const& _f) noexcept
+	void set_status_flag(I& _i, std::uint32_t st) noexcept
 	{
-		return _f(_i);
+		_i.status |= st;
 	}
 
-
-
-	namespace _detale
-	{
-		template <typename D>
-		struct __to_interface_t
-		{
-			__to_interface_t() = delete;
-			__to_interface_t(__to_interface_t const&) = delete;
-			__to_interface_t(__to_interface_t&&) = delete;
-			__to_interface_t& operator=(__to_interface_t const&) = delete;
-			__to_interface_t& operator=(__to_interface_t&&) = delete;
-
-			constexpr
-			__to_interface_t(D const& _d) noexcept : m_d{_d} {}
-
-			//Передать сообщение
-			template <typename I
-				, is_thread_interface_b<I> = true
-			>
-			constexpr
-			auto& operator () (I& _oi) noexcept
-			{
-				return _oi << m_d;
-			}
-
-		private:
-			D const& m_d;
-		};
-
-		struct __create_to_interface_t
-		{
-			__create_to_interface_t() = default;
-			__create_to_interface_t(__create_to_interface_t const&) = delete;
-			__create_to_interface_t(__create_to_interface_t&&) = delete;
-			__create_to_interface_t& operator=(__create_to_interface_t const&) = delete;
-			__create_to_interface_t& operator=(__create_to_interface_t&&) = delete;
-
-			//Передать сообщение
-			template <typename D>
-			constexpr
-			auto operator()(D&& _d) const noexcept
-			{
-				return __to_interface_t<D>(std::forward<D>(_d));
-			}
-			//Передать сообщение
-			template <typename D>
-			constexpr
-			auto operator << (D&& _d) const noexcept
-			{
-				return __to_interface_t<D>(std::forward<D>(_d));
-			}
-		};
-	}
-	//Передать сообщение
+	//Установить статус потока
+	template <typename I, is_thread_interface_b<I> = true>
 	constexpr
-	_detale::__create_to_interface_t to_interface;
-
-	//Передать сообщение
-	template <typename D, template<typename> typename O, typename I
-		, is_optional_b<O<std::reference_wrapper<I>>> = true
-		, is_thread_interface_b<I> = true
-	>
-	constexpr
-	auto operator | (O<std::reference_wrapper<I>> _oi
-					, _detale::__to_interface_t<D> _f) noexcept
+	void clear_status_flag(I& _i, std::uint32_t st) noexcept
 	{
-		if (_oi)
-			return _f(_oi.value().get());
-		else
-			return _oi;
-	}
-
-	//Передать сообщение
-	template <typename D, typename I
-		, is_thread_interface_b<I> = true
-	>
-	constexpr
-	auto& operator | (I& _i
-					, _detale::__to_interface_t<D> _f) noexcept
-	{
-		return _f(_i);
-	}
-
-
-	//Передать сообщение
-	template <template<typename> typename O, typename I, typename D
-		, is_optional_b<O<std::reference_wrapper<I>>> = true
-		, is_thread_interface_b<I> = true
-	>
-	constexpr
-	auto operator << (O<std::reference_wrapper<I>> _oi
-					, D&& _d) noexcept
-	{
-		if (_oi)
-			return _oi.value().get() << std::forward<D>(_d);
-		else
-			return _oi;
+		_i.status &= ~st;
 	}
 
 	inline
