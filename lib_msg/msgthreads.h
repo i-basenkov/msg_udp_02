@@ -27,20 +27,13 @@ extern "C"{
 
 #include "conv_b_l.h"
 
-#include "msgutils.h"
-
 namespace msg
 {
 	using std::cout;
 	using std::endl;
 
-	template <typename T>
-	struct TD;
-
 	template <typename>
 	constexpr bool always_false_v{false};
-
-
 
 	struct msg_timeout_t
 	{
@@ -81,8 +74,6 @@ namespace msg
 
 	using byte_array_t = std::vector<std::uint8_t>;
 
-
-
 	namespace _detale
 	{
 		template <typename... Hs>
@@ -120,19 +111,17 @@ namespace msg
 	template <typename... Hs>
 	handlers_t(Hs...) -> handlers_t<Hs...>;
 
+	constexpr
+	handlers_t null_handlers;
+
+	#define handlers_inline static constexpr handlers_t
+
 	template <typename T, typename MV, typename WT>
 	constexpr
 	bool is_handlers_v = std::is_invocable_v<T, MV&, WT&>;
 
 	template <typename T, typename MV, typename WT>
 	using is_handlers_b = std::enable_if_t<is_handlers_v<T, MV, WT>, bool>;
-
-	constexpr
-	handlers_t null_handlers;
-
-	#define handlers_inline static constexpr handlers_t
-
-
 
 	namespace _detale
 	{
@@ -159,33 +148,16 @@ namespace msg
 	constexpr
 	_detale::__hook_t<MessageType> hook;
 
-
 	enum class thread_type
 	{
-		blockable,
-		notblockable,
-		tcp_client,
-		tcp_server,
-		udp
+		queue_thr,
+		udp_thr
 	};
-	using blockable = std::integral_constant<thread_type, thread_type::blockable>;
-	using notblockable = std::integral_constant<thread_type, thread_type::notblockable>;
-	using tcp_client = std::integral_constant<thread_type, thread_type::tcp_client>;
-	using tcp_server = std::integral_constant<thread_type, thread_type::tcp_server>;
-	using udp = std::integral_constant<thread_type, thread_type::udp>;
-
-	enum class blocked_t
-	{
-		blocked,
-		unblocked
-	};
-	using blocked = std::integral_constant<blocked_t, blocked_t::blocked>;
-	using unblocked = std::integral_constant<blocked_t, blocked_t::unblocked>;
+	using queue_thr = std::integral_constant<thread_type, thread_type::queue_thr>;
+	using udp_thr = std::integral_constant<thread_type, thread_type::udp_thr>;
 
 	template <uint64_t i>
 	using timeout = std::integral_constant<uint64_t, i>;
-
-
 
 	template <typename _MV>
 	struct mx_queue_t
@@ -212,20 +184,17 @@ namespace msg
 		std::mutex mtx;
 	};
 
-
 	namespace _detale
 	{
 
 		template <
 			typename WT
-			, typename _MV, typename _EV, typename _BA, typename _TO
+			, typename _MV, typename _EV, typename _TT, typename _TO
 			, typename _H
 			, typename _CH
 			, typename _DS
 		>
 		struct thread_worker_t;
-
-
 
 		class __thread_interface_t
 		{
@@ -241,36 +210,53 @@ namespace msg
 
 			template <
 				typename WT
-				, typename O
-				, typename H
-				, typename CH
-				, typename DS
-			>
-			friend struct __start_thread_t;
-
-			template <
-				typename WT
-				, typename _MV, typename _EV, typename _BA, typename _TO
+				, typename _MV, typename _EV, typename _TT, typename _TO
 				, typename _H
 				, typename _CH
 				, typename _DS
 			>
 			friend struct thread_worker_t;
 
-			//friend struct __stop_t;
-			friend struct __status_t;
-			friend struct __set_status_flag_t;
-			friend struct __clear_status_flag_t;
-			friend struct __join_t;
-			friend struct __joinable_t;
-			friend struct __in_work_t;
+			template <typename WT>
+			friend struct __start_thread_t;
 
-			std::atomic<std::uint32_t> status{0};
-			std::atomic<int> stop{0};
+			std::uint32_t status()
+			{
+				return static_cast<std::uint32_t>(m_status);
+			}
+			void set_status_flags(std::uint32_t fl)
+			{
+				m_status |= fl;
+			}
+			void clear_status_flags(std::uint32_t fl)
+			{
+				m_status &= ~fl;
+			}
+			void stop(std::uint32_t st)
+			{
+				m_stop = st;
+			}
+			std::uint32_t stop() noexcept
+			{
+				return static_cast<std::uint32_t>(m_stop);
+			}
+			void join() noexcept
+			{
+				if (m_thread.joinable())
+				{
+					m_thread.join();
+				}
+			}
+			bool joinable() noexcept
+			{
+				return m_thread.joinable();
+			}
+
+		private:
+			std::atomic<std::uint32_t> m_status{0};
+			std::atomic<std::uint32_t> m_stop{0};
 			std::thread m_thread;
 		};
-
-
 
 		template <typename _MessageVariants>
 		class __thread_interface_queue_t : public __thread_interface_t
@@ -294,7 +280,7 @@ namespace msg
 
 			template <
 				typename WT
-				, typename _MV, typename _EV, typename _BA, typename _TO
+				, typename _MV, typename _EV, typename _TT, typename _TO
 				, typename _H
 				, typename _CH
 				, typename _DS
@@ -306,8 +292,6 @@ namespace msg
 			std::mutex m_mtx;
 			std::condition_variable m_cv;
 		};
-
-
 
 		template <typename _MessageVariants>
 		class __thread_interface_net_t : public __thread_interface_t
@@ -338,18 +322,12 @@ namespace msg
 				if (this->m_sock > 0) ::close(this->m_sock);
 			}
 
-			template <
-				typename WT
-				, typename O
-				, typename H
-				, typename CH
-				, typename DS
-			>
+			template <typename WT>
 			friend struct __start_thread_t;
 
 			template <
 				typename WT
-				, typename _MV, typename _EV, typename _BA, typename _TO
+				, typename _MV, typename _EV, typename _TT, typename _TO
 				, typename _H
 				, typename _CH
 				, typename _DS
@@ -389,12 +367,10 @@ namespace msg
 		};
 	}
 
-
-
 	template <
 		  typename _MessageVariants
 		, typename _ErrorVariants = std::variant<std::false_type>
-		, typename _Type = notblockable
+		, typename _Type = queue_thr
 		, typename _Timeout = timeout<0>
 		, typename = std::void_t<>
 	>
@@ -406,43 +382,12 @@ namespace msg
 	template <
 		  typename _MessageVariants
 		, typename _ErrorVariants
-		, typename _Timeout
 	>
 	class thread_interface_t
 	<
 		  _MessageVariants
 		, _ErrorVariants
-		, blockable
-		, _Timeout
-		, std::enable_if_t<!std::is_same_v<_Timeout, timeout<0>>>
-	>
-		: public _detale::__thread_interface_queue_t<_MessageVariants>
-	{
-	public:
-		using _detale::__thread_interface_queue_t<_MessageVariants>::__thread_interface_queue_t;
-
-		template <
-			typename WT
-			, typename _MV, typename _BA, typename _TO
-			, typename _H
-		>
-		friend struct _detale::thread_worker_t;
-
-	private:
-		std::mutex m_bmtx;
-		std::condition_variable m_bcv;
-		std::variant<unblocked, blocked> m_bv = unblocked{};
-	};
-
-	template <
-		  typename _MessageVariants
-		, typename _ErrorVariants
-	>
-	class thread_interface_t
-	<
-		  _MessageVariants
-		, _ErrorVariants
-		, notblockable
+		, queue_thr
 		, timeout<0>
 	>
 		: public _detale::__thread_interface_queue_t<_MessageVariants>
@@ -451,8 +396,6 @@ namespace msg
 		using _detale::__thread_interface_queue_t<_MessageVariants>::__thread_interface_queue_t;
 	};
 
-
-
 	template <
 		  typename _MessageVariants
 		, typename _ErrorVariants
@@ -462,7 +405,7 @@ namespace msg
 	<
 		  _MessageVariants
 		, _ErrorVariants
-		, udp
+		, udp_thr
 		, _Timeout
 	>
 		: public _detale::__thread_interface_net_t<_MessageVariants>
@@ -475,7 +418,7 @@ namespace msg
 		bool send(byte_array_t ba) noexcept
 		{
 			int cnt = 0;
-			while (this->status != 1)
+			while (this->status() != 1)
 			{
 				if (++cnt > 100)
 				{
@@ -492,14 +435,12 @@ namespace msg
 		}
 	};
 
-
-
 	namespace _detale
 	{
 		// Функциональный объект потока.
 		template <
 			  typename WT
-			, typename _MV, typename _EV, typename _BA, typename _TO
+			, typename _MV, typename _EV, typename _TT, typename _TO
 			, typename _H
 			, typename _CH
 			, typename _DS = std::nullopt_t
@@ -507,14 +448,14 @@ namespace msg
 		struct __thread_worker_t
 		{
 			constexpr
-			__thread_worker_t(thread_interface_t<_MV, _EV, _BA, _TO>& _ti
+			__thread_worker_t(thread_interface_t<_MV, _EV, _TT, _TO>& _ti
 								, _H const& _h) noexcept
 				: thr_i{_ti}
 				, handlers{_h}
 			{
 			}
 			constexpr
-			__thread_worker_t(thread_interface_t<_MV, _EV, _BA, _TO>& _ti
+			__thread_worker_t(thread_interface_t<_MV, _EV, _TT, _TO>& _ti
 								, _H const& _h
 								, _DS _ds) noexcept
 				: thr_i{_ti}
@@ -526,7 +467,7 @@ namespace msg
 			template <typename D>
 			constexpr
 			__thread_worker_t(D&& d
-								, thread_interface_t<_MV, _EV, _BA, _TO>& _ti
+								, thread_interface_t<_MV, _EV, _TT, _TO>& _ti
 								, _H const& _h) noexcept
 				: thr_i{_ti}
 				, handlers(_h)
@@ -536,7 +477,7 @@ namespace msg
 			template <typename D>
 			constexpr
 			__thread_worker_t(D&& d
-								, thread_interface_t<_MV, _EV, _BA, _TO>& _ti
+								, thread_interface_t<_MV, _EV, _TT, _TO>& _ti
 								, _H const& _h
 								, _CH const& _eh) noexcept
 				: thr_i{_ti}
@@ -548,7 +489,7 @@ namespace msg
 			template <typename D>
 			constexpr
 			__thread_worker_t(D&& d
-								, thread_interface_t<_MV, _EV, _BA, _TO>& _ti
+								, thread_interface_t<_MV, _EV, _TT, _TO>& _ti
 								, _H const& _h
 								, _CH const& _eh
 								, _DS _ds) noexcept
@@ -559,31 +500,30 @@ namespace msg
 				, worker{std::make_unique<WT>(std::forward<D>(d))}
 			{
 			}
-			thread_interface_t<_MV, _EV, _BA, _TO>& thr_i;
+			thread_interface_t<_MV, _EV, _TT, _TO>& thr_i;
 			_H const& handlers;
 			_CH const& ctrl_handlers = null_handlers;
 			_DS m_deserializer = std::nullopt;
 			std::unique_ptr<WT> worker;
 		};
 
-
 		template <
 			  typename WT
-			, typename _MV, typename _EV, typename _BA, typename _TO
+			, typename _MV, typename _EV, typename _TT, typename _TO
 			, typename _H
 			, typename _CH
 			, typename _DS = std::nullopt_t
 		>
-		struct thread_worker_t : __thread_worker_t<WT, _MV, _EV, _BA, _TO, _H, _CH>
+		struct thread_worker_t : __thread_worker_t<WT, _MV, _EV, _TT, _TO, _H, _CH>
 		{
-			using __thread_worker_t<WT, _MV, _EV, _BA, _TO, _H, _CH>::__thread_worker_t;
+			using __thread_worker_t<WT, _MV, _EV, _TT, _TO, _H, _CH>::__thread_worker_t;
 
 			constexpr
 			void operator()() noexcept
 			{
 				_MV vmsg;
-				this->thr_i.status |= 1;
-				while (!static_cast<std::uint32_t>(this->thr_i.stop))
+				this->thr_i.set_status_flags(1);
+				while (!static_cast<std::uint32_t>(this->thr_i.stop()))
 				{
 					{
 						std::unique_lock<std::mutex> ul(this->thr_i.m_mtx);
@@ -600,11 +540,9 @@ namespace msg
 					}
 					this->handlers(vmsg, this->worker);
 				}
-				this->thr_i.status &= 0xfe;
+				this->thr_i.clear_status_flags(1);
 			}
 		};
-
-
 
 		template <
 			  typename WT
@@ -615,11 +553,11 @@ namespace msg
 		>
 		struct thread_worker_t
 		<
-			WT, _MV, _EV, udp, _TO, _H, _CH, _DS
+			WT, _MV, _EV, udp_thr, _TO, _H, _CH, _DS
 		>
-			: __thread_worker_t<WT, _MV, _EV, udp, _TO, _H, _CH, _DS>
+			: __thread_worker_t<WT, _MV, _EV, udp_thr, _TO, _H, _CH, _DS>
 		{
-			using __thread_worker_t<WT, _MV, _EV, udp, _TO, _H, _CH, _DS>::__thread_worker_t;
+			using __thread_worker_t<WT, _MV, _EV, udp_thr, _TO, _H, _CH, _DS>::__thread_worker_t;
 
 			constexpr
 			void operator()()  noexcept
@@ -656,9 +594,9 @@ namespace msg
 
 			    std::unique_ptr<uint8_t[]> ubuf{new uint8_t[4096]};
 
-				this->thr_i.status |= 1;
+				this->thr_i.set_status_flags(1);
 
-				while (!static_cast<std::uint32_t>(this->thr_i.stop))
+				while (!static_cast<std::uint32_t>(this->thr_i.stop()))
 				{
 					pfd->revents = 0;
 					int res_poll = poll(pfd, 1, 100); 
@@ -699,7 +637,7 @@ namespace msg
 						break;
 					}
 				}
-				this->thr_i.status &= 0xfe;
+				this->thr_i.clear_status_flags(1);
 				shutdown(this->thr_i.sock(), SHUT_RDWR);
 				close(this->thr_i.sock());
 				this->thr_i.sock(0);
@@ -707,310 +645,142 @@ namespace msg
 		};
 	}
 
-
-
-	template <typename, typename = std::void_t<>, typename = std::void_t<>>
-	struct is_thread_interface : std::false_type {};
-
-	template <typename T>
-	struct is_thread_interface<T
-		, std::enable_if_t<T::is_thread_interface_v>
-	> : std::true_type {};
-
-	template <typename T>
-	constexpr
-	bool is_thread_interface_v = is_thread_interface<T>::value;
-
-	template <typename T>
-	using is_thread_interface_b = std::enable_if_t<is_thread_interface_v<T>, bool>;
-
-
-	template <typename, typename = std::void_t<>, typename = std::void_t<>, typename = std::void_t<>>
-	struct is_thread_interface_queue : std::false_type {};
-
-	template <typename T>
-	struct is_thread_interface_queue<T
-		, std::void_t<decltype(std::declval<T>().stop)>
-		, std::void_t<decltype(std::declval<T>().m_thread)>
-		, std::void_t<decltype(std::declval<T>().m_queue)>
-	> : std::true_type {};
-
-	template <typename T>
-	constexpr
-	bool is_thread_interface_queue_v = is_thread_interface_queue<T>::value;
-
-	template <typename T>
-	using is_thread_interface_queue_b = std::enable_if_t<is_thread_interface_queue_v<T>, bool>;
-
-
-	template <typename, typename = std::void_t<>, typename = std::void_t<>, typename = std::void_t<>>
-	struct is_thread_interface_net : std::false_type {};
-
-	template <typename T>
-	struct is_thread_interface_net<T
-		, std::void_t<decltype(std::declval<T>().stop)>
-		, std::void_t<decltype(std::declval<T>().m_thread)>
-		, std::void_t<decltype(std::declval<T>().m_sock)>
-	> : std::true_type {};
-
-	template <typename T>
-	constexpr
-	bool is_thread_interface_net_v = is_thread_interface_net<T>::value;
-
-	template <typename T>
-	using is_thread_interface_net_b = std::enable_if_t<is_thread_interface_net_v<T>, bool>;
-
-
 	namespace _detale
 	{
-		template <
-			  typename WT
-			, typename O
-			, typename H
-			, typename CH = handlers_t<>
-			, typename DS = std::nullopt_t
-		>
+		template <typename WT>
 		struct __start_thread_t
 		{
-			constexpr
-			__start_thread_t(O _o, H const& _h) noexcept
-				: options{_o}
-				, handlers{_h}
-			{
-			}
-
-			__start_thread_t(O _o, H const& _h, CH const& _eh) noexcept
-				: options{_o}
-				, handlers{_h}
-				, ctrl_handlers{_eh}
-			{
-			}
-
-			constexpr
-			__start_thread_t(O _o, H const& _h, CH const& _eh, DS _ds) noexcept
-				: options{_o}
-				, handlers{_h}
-				, ctrl_handlers{_eh}
-				, m_ds{_ds}
-			{
-			}
-
-			template <
-				typename _MV, typename _EV, typename _BA, typename _TO
-				, is_handlers_b<H, _MV, WT> = true
-			>
-			constexpr
-			auto& operator()(
-				thread_interface_t<_MV, _EV, _BA, _TO>& interface
-			) const noexcept
-			{
-				interface.stop = 0;
-				if constexpr (std::is_same_v<O, std::nullopt_t>)
-				{
-					if constexpr (std::is_same_v<std::decay_t<DS>, std::nullopt_t>)
-					{
-						interface.m_thread = std::thread(thread_worker_t
-						<
-							WT
-							, _MV, _EV, _BA, _TO
-							, H
-							, CH
-						>(interface, handlers));
-					}
-					else
-					{
-						interface.m_thread = std::thread(thread_worker_t
-						<
-							WT
-							, _MV, _EV, _BA, _TO
-							, H
-							, CH
-							, DS
-						>(interface, handlers, ctrl_handlers, m_ds));
-					}
-				}
-				else
-				{
-					if constexpr (std::is_same_v<std::decay_t<DS>, std::nullopt_t>)
-					{
-						interface.m_thread = std::thread(thread_worker_t
-						<
-							WT
-							, _MV, _EV, _BA, _TO
-							, H
-							, CH
-						>(std::move(options.value()), interface, handlers, ctrl_handlers));
-					}
-					else
-					{
-					interface.m_thread = std::thread(thread_worker_t
-					<
-						WT
-						, _MV, _EV, _BA, _TO
-						, H
-						, CH
-						, DS
-					>(std::move(options.value()), interface, handlers, ctrl_handlers, m_ds));
-					}
-				}
-				return  interface;
-			}
-		private:
-			O options = std::nullopt;
-			H const& handlers;
-			CH const& ctrl_handlers = null_handlers;
-			DS m_ds = std::nullopt;
-		};
-
-		template <typename WT>
-		struct _create_start_thread_t
-		{
-			_create_start_thread_t() = default;
-			_create_start_thread_t(_create_start_thread_t const&) = delete;
-			_create_start_thread_t(_create_start_thread_t&&) = delete;
-			_create_start_thread_t& operator=(_create_start_thread_t const&) = delete;
-			_create_start_thread_t& operator=(_create_start_thread_t&&) = delete;
+			__start_thread_t() = default;
+			__start_thread_t(__start_thread_t const&) = delete;
+			__start_thread_t(__start_thread_t&&) = delete;
+			__start_thread_t& operator=(__start_thread_t const&) = delete;
+			__start_thread_t& operator=(__start_thread_t&&) = delete;
 
 			//Запустить поток
 			template <
-				  typename _O
+				  typename _I
 				, typename _H
 			>
 			constexpr
-			auto operator()(_O&& options
-				, _H const& handlers) const noexcept
+			void operator()(
+				_I& i
+				, _H const& h) const noexcept
 			{
-				return __start_thread_t<WT, std::optional<_O>, _H>
-							(std::make_optional(std::forward<_O>(options)), handlers);
+				start(i, h);
 			}
 
 			//Запустить поток
 			template <
-				  typename _O
+				  typename _I
+				, typename _O
 				, typename _H
-				, typename _CH
 			>
 			constexpr
-			auto operator()(_O&& options
-				, _H const& handlers
-				, _CH const& ctrl_handlers) const noexcept
+			void operator()(
+				  _I& i
+				, _O&& o
+				, _H const& h) const noexcept
 			{
-				return __start_thread_t<WT, std::optional<_O>, _H, _CH>
-							(std::make_optional(std::forward<_O>(options))
-							, handlers, ctrl_handlers);
+				start(i, std::forward<_O>(o), h);
 			}
 
 			//Запустить поток
 			template <
-				  typename _O
+				  typename _I
+				, typename _O
 				, typename _H
 				, typename _CH
 				, typename _DS
-				, std::enable_if_t<!std::is_member_pointer_v<std::decay_t<_DS>>, bool> = true
 			>
 			constexpr
-			auto operator()(_O&& options
-				, _H const& handlers
-				, _CH const& ctrl_handlers
-				, _DS const& _ds) const noexcept
+			void operator()(
+				  _I& i
+				, _O&& o
+				, _H const& h
+				, _CH const& ch
+				, _DS ds) const noexcept
 			{
-				return __start_thread_t<WT, std::optional<_O>, _H, _CH
-						, std::optional<std::reference_wrapper<const _DS>>
-					>(std::make_optional(std::forward<_O>(options))
-							, handlers
-							, ctrl_handlers
-							, std::make_optional(std::ref(_ds)));
+				start(i, std::forward<_O>(o), h, ch, std::make_optional(std::ref(ds)));
 			}
 
-			//Запустить поток
 			template <
-				typename _H
+				typename _MV, typename _EV, typename _TT, typename _TO
+				, typename _H
+				, is_handlers_b<_H, _MV, WT> = true
 			>
 			constexpr
-			auto operator()(_H const& handlers) const noexcept
+			void start(
+				thread_interface_t<_MV, _EV, _TT, _TO>& interface
+				, _H const& handlers
+			) const noexcept
 			{
-				return __start_thread_t<WT, std::nullopt_t, _H>(std::nullopt, handlers);
+				interface.stop(0);
+				interface.m_thread = std::thread(thread_worker_t
+				<
+					WT
+					, _MV, _EV, _TT, _TO
+					, _H
+					, decltype(null_handlers)
+				>(interface, handlers));
+			}
+
+			template <
+				typename _MV, typename _EV, typename _TT, typename _TO
+				, typename _O
+				, typename _H
+				, is_handlers_b<_H, _MV, WT> = true
+			>
+			constexpr
+			void start(
+				thread_interface_t<_MV, _EV, _TT, _TO>& interface
+				, _O&& options
+				, _H const& handlers
+			) const noexcept
+			{
+				interface.stop(0);
+				interface.m_thread = std::thread(thread_worker_t
+				<
+					WT
+					, _MV, _EV, _TT, _TO
+					, _H
+					, decltype(null_handlers)
+				>(std::forward<_O>(options), interface, handlers));
+			}
+
+			template <
+				typename _MV, typename _EV, typename _TT, typename _TO
+				, typename _O
+				, typename _H
+				, typename _CH
+				, typename _DS
+				, is_handlers_b<_H, _MV, WT> = true
+				, is_handlers_b<_CH, _MV, WT> = true
+			>
+			constexpr
+			void start(
+				thread_interface_t<_MV, _EV, _TT, _TO>& interface
+				, _O&& options
+				, _H const& handlers
+				, _CH const& ch
+				, _DS ds
+			) const noexcept
+			{
+				interface.stop(0);
+				interface.m_thread = std::thread(thread_worker_t
+				<
+					WT
+					, _MV, _EV, _TT, _TO
+					, _H
+					, _CH
+					, _DS
+				>(std::forward<_O>(options), interface, handlers, ch, ds));
 			}
 		};
+
 	}
 	template <typename WT = nullptr_t>
 	constexpr
-	_detale::_create_start_thread_t<WT> start;
-
-	//Запустить поток
-	template <typename _MV, typename _EV, typename _BA, typename _TO
-		, typename _WT, typename _O, typename _H, typename _CH
-		, is_handlers_b<_H, _MV, _WT> = true
-	>
-	constexpr
-	auto& operator | (thread_interface_t<_MV, _EV, _BA, _TO>& _ti_o
-							, _detale::__start_thread_t<_WT, _O, _H, _CH> const& _f) noexcept
-	{
-		return _f(_ti_o);
-	}
-	//Запустить поток
-	template <typename _MV, typename _EV, typename _BA, typename _TO
-		, typename _WT, typename _O, typename _H, typename _CH, typename _DS
-		, is_handlers_b<_H, _MV, _WT> = true
-	>
-	constexpr
-	auto& operator | (thread_interface_t<_MV, _EV, _BA, _TO>& _ti_o
-							, _detale::__start_thread_t<_WT, _O, _H,_CH, _DS> const& _f) noexcept
-	{
-		return _f(_ti_o);
-	}
-
-
-
-	//Остановить поток
-	template <typename I, is_thread_interface_b<I> = true>
-	constexpr
-	void stop(I& _i) noexcept
-	{
-		_i.stop = 1;
-	}
-
-	//Возвратить статус потока
-	template <typename I, is_thread_interface_b<I> = true>
-	constexpr
-	auto status(I& _i) noexcept
-	{
-		return static_cast<std::uint32_t>(_i.status);
-	}
-
-	template <typename I, is_thread_interface_b<I> = true>
-	constexpr
-	void join(I& _i) noexcept
-	{
-		if (_i.m_thread.joinable())
-		{
-			_i.m_thread.join();
-		}
-	}
-
-	//Поток потенциально работающий?
-	template <typename I, is_thread_interface_b<I> = true>
-	constexpr
-	bool joinable(I& _i) noexcept
-	{
-		return _i.m_thread.joinable();
-	}
-
-	//Установить статус потока
-	template <typename I, is_thread_interface_b<I> = true>
-	constexpr
-	void set_status_flag(I& _i, std::uint32_t st) noexcept
-	{
-		_i.status |= st;
-	}
-
-	//Установить статус потока
-	template <typename I, is_thread_interface_b<I> = true>
-	constexpr
-	void clear_status_flag(I& _i, std::uint32_t st) noexcept
-	{
-		_i.status &= ~st;
-	}
+	_detale::__start_thread_t<WT> start_thread;
 
 	inline
 	uint32_t crc32c(uint32_t crc, const unsigned char *buf, size_t len)

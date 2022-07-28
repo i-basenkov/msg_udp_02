@@ -106,9 +106,10 @@ public:
 	SrvNet(T&& o)
 		: options{std::forward<T>(o)}
 	{
-		send_thr | start<SrvSend>
+		start_thread<SrvSend>
 		(
-			SrvSend::options_t(
+			send_thr
+			, SrvSend::options_t(
 				options.interface
 			)
 			, SrvSend::msg_handlers
@@ -117,12 +118,12 @@ public:
 	inline
 	~SrvNet()
 	{
-		stop(send_thr);
-		join(send_thr);
+		send_thr.stop(1);
+		send_thr.join();
 		for (auto& el : works)
 		{
-			stop(*el.second);
-			join(*el.second);
+			el.second->stop(1);
+			el.second->join();
 		}
 	}
 

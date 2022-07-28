@@ -63,7 +63,7 @@ namespace msg::file_send
 			  msg_error_t
 		>;
 
-		using udp_interface_t = thread_interface_t<msg_udp_ts, msg_err, udp>;
+		using udp_interface_t = thread_interface_t<msg_udp_ts, msg_err, udp_thr>;
 
 	}
 
@@ -92,7 +92,7 @@ namespace msg::file_send
 	>;
 
 
-	using client_udp_interface_t = thread_interface_t<net::msg_udp_ts, client_msg_err, udp, timeout<1>>;
+	using client_udp_interface_t = thread_interface_t<net::msg_udp_ts, client_msg_err, udp_thr, timeout<1>>;
     using client_send_interface_t = thread_interface_t<net::msg_udp_ts>;
 	using client_work_iterface_t = thread_interface_t<msg_client_ts>;
 

@@ -130,9 +130,10 @@ public:
 	ClientNet(T&& o)
 		: options{std::forward<T>(o)}
 	{
-		send_thr | start<ClientSend>
+		start_thread<ClientSend>
 		(
-			ClientSend::options_t(
+			send_thr
+			, ClientSend::options_t(
 				options.interface
 			)
 			, ClientSend::msg_handlers
@@ -141,12 +142,12 @@ public:
 	inline
 	~ClientNet()
 	{
-		stop(send_thr);
-		join(send_thr);
+		send_thr.stop(1);
+		send_thr.join();
 		for (auto& el : works)
 		{
-			stop(*el.second);
-			join(*el.second);
+			el.second->stop(1);
+			el.second->join();
 		}
 	}
 

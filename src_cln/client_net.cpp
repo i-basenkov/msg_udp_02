@@ -118,8 +118,8 @@ void ClientWork::work(msg_client_ts& in_d)
 
 		display.send(std::move(os.str()));
 
-		set_status_flag(options.self_interface,2);
-		stop(options.self_interface);
+		options.self_interface.set_status_flags(2);
+		options.self_interface.stop(1);
 	}
 	else
 	// <<<<---- сбой ----
@@ -177,9 +177,10 @@ void ClientNet::timeout(client_msg_err const& )
 		{
 			auto nw = works.emplace(next_id, std::make_unique<client_work_iterface_t>());
 			auto& thri = *(nw.first->second);
-			thri | start<ClientWork>
+			start_thread<ClientWork>
 			(
-				ClientWork::options_t(
+				thri
+				, ClientWork::options_t(
 					send_thr
 					, thri
 					, file
@@ -205,11 +206,11 @@ void ClientNet::rcv_seq(net::msg_udp_ts& in_d)
 	}
 	for (auto i = works.begin(); i != works.end();)
 	{
-		if (joinable(*i->second)
-			&& (status(*i->second) & 0x02) == 2
+		if (i->second->joinable()
+			&& (i->second->status() & 0x02) == 2
 		)
 		{
-			join(*i->second);
+			i->second->join();
 			i = works.erase(i);
 		}
 		else

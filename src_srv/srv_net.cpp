@@ -63,8 +63,8 @@ void SrvWork::work(net::msg_udp_ts& in_d)
 
 //		display << disp_msg::msg1_t(std::move(os.str()));
 
-		set_status_flag(options.self_interface, 2);
-		stop(options.self_interface);
+		options.self_interface.set_status_flags(2);
+		options.self_interface.stop(1);
 	}
 	else
 	{
@@ -92,7 +92,7 @@ void SrvNet::rcv_seq(net::msg_udp_ts& in_d)
 	auto& d = std::get<net::msg_udp>(in_d);
 	if (auto w = works.find(d.head.id);
 		w != works.end()
-		&& (status(*w->second) & 0x02) == 0
+		&& (w->second->status() & 0x02) == 0
 	)
 	{
 		w->second->send(std::move(d));
@@ -100,11 +100,11 @@ void SrvNet::rcv_seq(net::msg_udp_ts& in_d)
 	}
 	for (auto i = works.begin(); i != works.end();)
 	{
-		if (joinable(*i->second)
-			&& (status(*i->second) & 0x02) == 2
+		if (i->second->joinable()
+			&& (i->second->status() & 0x02) == 2
 		)
 		{
-			join(*i->second);
+			i->second->join();
 			i = works.erase(i);
 		}
 		else
@@ -114,9 +114,10 @@ void SrvNet::rcv_seq(net::msg_udp_ts& in_d)
 	}
 	auto nw = works.emplace(d.head.id, std::make_unique<srv_work_iterface_t>());
 	auto& thri = *(nw.first->second);
-	thri | start<SrvWork>
+	start_thread<SrvWork>
 	(
-		SrvWork::options_t(
+		thri
+		, SrvWork::options_t(
 			send_thr
 			, thri
 		)
