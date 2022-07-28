@@ -454,16 +454,6 @@ namespace msg
 				, handlers{_h}
 			{
 			}
-			constexpr
-			__thread_worker_t(thread_interface_t<_MV, _EV, _TT, _TO>& _ti
-								, _H const& _h
-								, _DS _ds) noexcept
-				: thr_i{_ti}
-				, handlers(_h)
-				, m_deserializer{_ds}
-				, worker{std::make_unique<WT>()}
-			{
-			}
 			template <typename D>
 			constexpr
 			__thread_worker_t(D&& d
@@ -471,18 +461,6 @@ namespace msg
 								, _H const& _h) noexcept
 				: thr_i{_ti}
 				, handlers(_h)
-				, worker{std::make_unique<WT>(std::forward<D>(d))}
-			{
-			}
-			template <typename D>
-			constexpr
-			__thread_worker_t(D&& d
-								, thread_interface_t<_MV, _EV, _TT, _TO>& _ti
-								, _H const& _h
-								, _CH const& _eh) noexcept
-				: thr_i{_ti}
-				, handlers(_h)
-				, ctrl_handlers{_eh}
 				, worker{std::make_unique<WT>(std::forward<D>(d))}
 			{
 			}
