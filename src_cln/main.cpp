@@ -34,12 +34,10 @@ int main()
 
 	file_send::client_udp_interface_t client_net(ip_addr(127, 0, 0, 1), port(7001), port(7002));
 
-	//display | start<>(disp_handlers);
 	start_thread<>(display, disp_handlers);
 
 	mx_queue_t<file_t> file_queue;
 
-//	client_net | start<ClientNet>
 	start_thread<ClientNet>
 	(
 		client_net
