@@ -48,6 +48,7 @@ namespace msg::file_send
 		{
 			send_thr.thread = std::thread(worker_t<net_sender_t>(send_thr, self_i));
 		}
+
 		inline
 		~SrvNet()
 		{
@@ -56,10 +57,8 @@ namespace msg::file_send
 				el.second->stop |= 0x01;
 				el.second->join();
 			}
-
 			send_thr.stop |= 0x01;
 			send_thr.join();
-
 		}
 
 		void run();
