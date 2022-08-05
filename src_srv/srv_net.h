@@ -51,14 +51,14 @@ namespace msg::file_send
 		inline
 		~SrvNet()
 		{
-			send_thr.stop |= 0x01;
-			send_thr.join();
-
 			for (auto& el : works)
 			{
 				el.second->stop |= 0x01;
 				el.second->join();
 			}
+
+			send_thr.stop |= 0x01;
+			send_thr.join();
 
 		}
 
